@@ -8,6 +8,25 @@ import argparse
 import numpy as np
 from sklearn.model_selection import cross_val_score
 
+# PyTorch/Skorch imports for the MLP model
+import torch
+# Monkey-patch torch.load to default to weights_only=True and suppress related warnings
+_orig_torch_load = torch.load
+def _torch_load_weights_only(f, *args, **kwargs):
+    if 'weights_only' not in kwargs:
+        kwargs['weights_only'] = True
+    return _orig_torch_load(f, *args, **kwargs)
+torch.load = _torch_load_weights_only
+import torch.nn as nn
+
+from skorch import NeuralNetRegressor
+
+# Subclass to ensure targets are cast to float32 for loss computation
+class FloatNeuralNetRegressor(NeuralNetRegressor):
+    def get_loss(self, y_pred, y_true, *args, **kwargs):
+        # Cast targets to float32 to match prediction dtype
+        return super().get_loss(y_pred, y_true.float(), *args, **kwargs)
+
 # Third-party helpers that already exist in the project
 from dataloader_and_utils import load_dataset, mean_percent_error
 
@@ -420,13 +439,121 @@ class ElasticNetTrainer(BaseBatteryModelTrainer):
     # ElasticNet uses model.predict internally with log-scale, so no override needed.
 
 
+# ---------------------------------------------------------------------------
+# PyTorch/Skorch MLP implementation
+# ---------------------------------------------------------------------------
+class MLPModule(nn.Module):
+    def __init__(self, num_features, hidden_units=50, num_hidden_layers=5):
+        super().__init__()
+        layers = []
+        input_dim = num_features
+        for _ in range(num_hidden_layers):
+            layers.append(nn.Linear(input_dim, hidden_units))
+            layers.append(nn.ReLU())
+            input_dim = hidden_units
+        layers.append(nn.Linear(input_dim, 1))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, X):
+        # Ensure input is float32 to match network parameters
+        X = X.float()
+        return self.network(X).squeeze(-1)
+
+
+class PyTorchTrainer(BaseBatteryModelTrainer):
+    def __init__(self, param_grid=None, **kwargs):
+        super().__init__(param_grid=param_grid, **kwargs)
+
+    def _file_prefix(self):
+        return "pt"
+
+    def _get_param_grid(self):
+        if self.user_param_grid is not None:
+            return self.user_param_grid
+        return [
+            {"module__hidden_units": 50, "module__num_hidden_layers": 10, "max_epochs": 500, "lr": 0.01},
+
+        ]
+
+    def _build_model(self, **params):
+        # determine input dimension from the first cycle's data
+        X_dummy, y_dummy, _ = self._load_data(self.N_CYCLES[0])
+        num_features = X_dummy.shape[1]
+        # pop skorch-specific hyperparameters
+        hidden_units = params.pop("module__hidden_units")
+        num_hidden_layers = params.pop("module__num_hidden_layers")
+        max_epochs = params.pop("max_epochs")
+        lr = params.pop("lr")
+        return FloatNeuralNetRegressor(
+            MLPModule,
+            module__num_features=num_features,
+            module__hidden_units=hidden_units,
+            module__num_hidden_layers=num_hidden_layers,
+            max_epochs=max_epochs,
+            lr=lr,
+            optimizer=torch.optim.Adam,
+            iterator_train__shuffle=True,
+            train_split=None,
+            verbose=0,
+            device="cpu",
+            **params,
+        )
+
+    def _predict(self, model, X, y_orig):
+        # skorch returns numpy array already
+        return model.predict(X)
+
+    def _save_results(self):
+        # First, run the base class save to dump models and percent errors
+        super()._save_results()
+        # Compute test MPE and gather final-cycle predictions similar to other trainers
+        test_mpe = np.zeros_like(self.N_CYCLES, dtype=float)
+        predicted_cycle_lives_full = None
+        train_predicted_cycle_lives_full = None
+
+        for i, n_cycle in enumerate(self.N_CYCLES):
+            # Paths for train and test CSVs
+            suffix = "_log" if self.use_log_features else ""
+            train_path = f"./training/cycles_2TO{n_cycle}{suffix}.csv"
+            test_path = f"./testing/cycles_2TO{n_cycle}{suffix}.csv"
+
+            # Load datasets
+            X_train, y_train, _ = load_dataset(train_path, False, self.use_all_features, self.which_features)
+            X_test, y_test, _ = load_dataset(test_path, False, self.use_all_features, self.which_features)
+
+            # Predictions
+            y_pred_test = self._predict(self.trained_models[i], X_test, y_test)
+            y_pred_train = self._predict(self.trained_models[i], X_train, y_train)
+
+            # Compute test MPE
+            test_mpe[i] = (np.abs(y_pred_test - y_test) / y_test).mean() * 100
+
+            # Save detailed predictions for the final cycle (100)
+            if n_cycle == self.N_CYCLES[-1]:
+                predicted_cycle_lives_full = y_pred_test
+                train_predicted_cycle_lives_full = y_pred_train
+
+        # Bundle results in the same order as other trainers
+        data_tuple = (
+            predicted_cycle_lives_full,
+            train_predicted_cycle_lives_full,
+            self.training_mpe,
+            self.min_mpe,
+            test_mpe,
+        )
+        # Persist to results directory
+        import pickle, os
+        with open(os.path.join(self.results_dir, f"{self._file_prefix()}_data.pkl"), "wb") as fh:
+            pickle.dump(data_tuple, fh)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Train battery life prediction models with optional manual hyper‑parameters."
     )
     parser.add_argument(
         "--model",
-        choices=["AB", "RF", "enet", "all"],
+        choices=["AB", "RF", "enet", "pt", "all"],
         default="all",
         help="Which model to train (default: train all).",
     )
@@ -484,3 +611,5 @@ if __name__ == "__main__":
         RandomForestTrainer(param_grid=user_grid if args.model == "RF" else None).train()
     if args.model in ("enet", "all"):
         ElasticNetTrainer(param_grid=user_grid if args.model == "enet" else None).train()
+    if args.model in ("pt", "all"):
+        PyTorchTrainer(param_grid=user_grid if args.model == "pt" else None).train()
