@@ -1,11 +1,14 @@
-Battery-Cycle-Life Prediction —— 使用指南
+# Battery-Cycle-Life Prediction
+[![Python](https://img.shields.io/badge/python-%3E%3D3.8-blue)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-该项目实现了基于 Elastic Net / Random Forest / AdaBoost 的锂电池循环寿命预测，代码已整理为符合 OOP 设计的 model.py，并保留向后兼容的可视化脚本。本文档说明如何搭建环境、训练模型以及复现误差图。
+## 使用指南
 
 ⸻
 
-目录结构
+## 目录结构
 
+```bash
 final_code/model
 ├── dataloader_and_utils.py   # 数据加载、评估指标
 ├── featurgeneration.m        # MATLAB 特征工程脚本（可选）
@@ -14,29 +17,32 @@ final_code/model
 ├── plot_error_pic.py         # 绘制 Train/Test MPE 图
 ├── coeff_plotter.py        # 绘制特征重要度热图
 └── results/                  # 训练完成后生成的模型与指标文件
+```
 
 注意：results/ 会在首次运行时自动创建，同步保存各模型的参数、评估指标以及旧版脚本需要的 _data.pkl。
 
 ⸻
 
-环境依赖
+## 环境依赖
 	•	Python ≥ 3.8
 	•	主要库：numpy, scikit-learn, pandas, matplotlib
 
 # 建议使用 venv / conda
+```bash
 conda create -n battery python=3.10
 conda activate battery
-
-
+```
 
 ⸻
 
-数据准备
+## 数据准备
 
 项目假设已经存在如下 CSV：
 
+```bash
 training/cycles_2TO{N}_log.csv
 testing/ cycles_2TO{N}_log.csv   # N ∈ {20,30…100}
+```
 
 每个文件包含：
 	1.	battery_id（未使用）
@@ -47,11 +53,13 @@ testing/ cycles_2TO{N}_log.csv   # N ∈ {20,30…100}
 
 ⸻
 
-快速开始
+## 快速开始
 
 1. 默认全模型训练
 
+```bash
 python model.py            # 训练 ENet + RF + AB，采用默认参数网格
+```
 
 完成后，results/ 内将出现：
 
@@ -66,9 +74,11 @@ ___
 
 model.py 已加入 CLI：
 
+```bash
 python model.py \
        --model AB \
        --param n_estimators=500,1000 learning_rate=0.05
+```
 
 	•	--model：AB / RF / enet / all（默认）。
 	•	--param：用 KEY=VALUE 指定超参；多个值用逗号分隔，将自动进行笛卡尔积组合。
@@ -76,10 +86,16 @@ python model.py \
 示例：
 
 # RF: 尝试深度 10 与 50；树数 300
+
+```bash
 python model.py --model RF --param n_estimators=300 max_depth=10,50
+```
 
 # ENet: 修改 l1_ratio 范围
+
+```bash
 python model.py --model enet --param l1_ratio=0.2,0.8
+```
 
 如同时想调多模型，可多次调用或设 --model all 并分别指定对应参数。
 
@@ -98,7 +114,7 @@ python model.py --model enet --param use_all_features=True
 
 ⸻
 
-可视化
+## 可视化
 
 1. 误差曲线（Fig 1）
 
@@ -120,7 +136,7 @@ python model.py --model enet --param use_all_features=True
 
 ⸻
 
-自定义开发
+## 自定义开发
 	•	新增模型：继承 BaseBatteryModelTrainer，实现 _get_param_grid 与 _build_model，必要时覆盖 _predict 与 _save_results。
 	•	更多特征：修改 WHICH_FEATURES 或在 CSV 中添加列；dataloader_and_utils.load_dataset 已支持 use_all_features=True。
 	亦可在命令行通过 `--param use_all_features=True` 一键启用全部列。
@@ -128,9 +144,12 @@ python model.py --model enet --param use_all_features=True
 
 ⸻
 
-结果文件说明（补充）
+## 结果文件说明
 
 | 文件 | 作用 |
 |------|------|
 | `AB_features_coeffs.pkl`, `RF_features_coeffs.pkl` | n_features × N_cycles 的特征重要度矩阵，供 `coeff_plotter.py` 读取 |
 
+## 许可证
+
+本项目采用 MIT 许可证，详情参见 [LICENSE](LICENSE) 文件。
