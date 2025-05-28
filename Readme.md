@@ -4,7 +4,7 @@
 
 ## 使用指南
 
-⸻
+
 
 ## 目录结构
 
@@ -21,7 +21,7 @@ final_code/model
 
 注意：results/ 会在首次运行时自动创建，同步保存各模型的参数、评估指标以及旧版脚本需要的 _data.pkl。
 
-⸻
+
 
 ## 环境依赖
 	•	Python ≥ 3.8
@@ -33,7 +33,7 @@ conda create -n battery python=3.10
 conda activate battery
 ```
 
-⸻
+
 
 ## 数据准备
 
@@ -51,7 +51,7 @@ testing/ cycles_2TO{N}_log.csv   # N ∈ {20,30…100}
 
 如需重新生成特征，可参考 featuregeneration.m。
 
-⸻
+
 
 ## 快速开始
 
@@ -69,7 +69,7 @@ AB_crossvalid_percenterror.pkl
 AB_data.pkl           # 兼容绘图脚本
 RF_*.pkl  同理
 enet_*.pkl 同理
-___
+
 2. 手动调参 & 选择模型
 
 model.py 已加入 CLI：
@@ -99,7 +99,7 @@ python model.py --model enet --param l1_ratio=0.2,0.8
 
 如同时想调多模型，可多次调用或设 --model all 并分别指定对应参数。
 
-⸻
+
 
 3. 加载全部特征
 
@@ -112,7 +112,7 @@ python model.py --model enet --param use_all_features=True
 
 > `use_all_features` 可以和其他 `--param` 一起写；若缺省则保持原来子集。
 
-⸻
+
 
 ## 可视化
 
@@ -134,7 +134,7 @@ python model.py --model enet --param use_all_features=True
    - 生成 `AB_features.png`, `RF_features.png`, `enet_features.png`
    - 图高及左侧留白自动随特征数调节，长标签不会再被裁切
 
-⸻
+
 
 ## 自定义开发
 	•	新增模型：继承 BaseBatteryModelTrainer，实现 _get_param_grid 与 _build_model，必要时覆盖 _predict 与 _save_results。
@@ -142,7 +142,7 @@ python model.py --model enet --param use_all_features=True
 	亦可在命令行通过 `--param use_all_features=True` 一键启用全部列。
 	•	实验记录：results/ 按日期分目录或改写保存逻辑即可。
 
-⸻
+
 
 ## 结果文件说明
 
