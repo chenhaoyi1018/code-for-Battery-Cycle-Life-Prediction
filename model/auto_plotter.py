@@ -51,8 +51,13 @@ def load_model_data(model, results_dir, use_log_features, use_all_features, whic
             X_test, y_test, _ = load_dataset(test_path, use_log_features, use_all_features, which_features)
             X_train, y_train, _ = load_dataset(f"training/cycles_2TO{n}_log.csv", use_log_features, use_all_features, which_features)
             m = models_list[i]
-            y_pred_test = m.predict(X_test)
-            y_pred_train = m.predict(X_train)
+            # Predict in log10 space and invert to linear scale
+            y_pred_test_log = m.predict(X_test)
+            y_pred_train_log = m.predict(X_train)
+            # Convert log predictions back to actual cycle lives
+            y_pred_test = 10 ** y_pred_test_log
+            y_pred_train = 10 ** y_pred_train_log
+            # Compute mean percent error on linear scale
             test_mpe[i] = np.mean(np.abs(y_pred_test - y_test) / y_test) * 100
             if n == N_cycles[-1]:
                 predicted_full = y_pred_test
