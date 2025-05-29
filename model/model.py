@@ -7,7 +7,7 @@ import argparse
 
 import numpy as np
 from sklearn.model_selection import cross_val_score
-
+from skorch.dataset import ValidSplit
 # PyTorch/Skorch imports for the MLP model
 import torch
 # Monkey-patch torch.load to default to weights_only=True and suppress related warnings
@@ -18,6 +18,8 @@ def _torch_load_weights_only(f, *args, **kwargs):
     return _orig_torch_load(f, *args, **kwargs)
 torch.load = _torch_load_weights_only
 import torch.nn as nn
+
+from skorch.callbacks import EarlyStopping, LRScheduler
 
 from skorch import NeuralNetRegressor
 
@@ -447,11 +449,17 @@ class MLPModule(nn.Module):
         super().__init__()
         layers = []
         input_dim = num_features
+        layers.append(nn.BatchNorm1d(num_features))
         for _ in range(num_hidden_layers):
             layers.append(nn.Linear(input_dim, hidden_units))
             layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
             input_dim = hidden_units
-        layers.append(nn.Linear(input_dim, 1))
+        layers.append(nn.Linear(input_dim,25))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(25,15))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(15, 1))
         self.network = nn.Sequential(*layers)
 
     def forward(self, X):
@@ -471,7 +479,7 @@ class PyTorchTrainer(BaseBatteryModelTrainer):
         if self.user_param_grid is not None:
             return self.user_param_grid
         return [
-            {"module__hidden_units": 50, "module__num_hidden_layers": 10, "max_epochs": 500, "lr": 0.01},
+            {"module__hidden_units": 50, "module__num_hidden_layers": 10, "max_epochs": 1000, "lr": 0.01},
 
         ]
 
@@ -495,7 +503,11 @@ class PyTorchTrainer(BaseBatteryModelTrainer):
             iterator_train__shuffle=True,
             train_split=None,
             verbose=0,
-            device="cpu",
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            optimizer__weight_decay=1e-4,
+            callbacks=[
+                ('lr_scheduler', LRScheduler(policy='StepLR', step_size=100, gamma=0.1)),
+            ],
             **params,
         )
 
